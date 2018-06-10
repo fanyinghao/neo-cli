@@ -21,6 +21,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Neo.Cryptography;
 using ECCurve = Neo.Cryptography.ECC.ECCurve;
 using ECPoint = Neo.Cryptography.ECC.ECPoint;
 
@@ -92,8 +93,93 @@ namespace Neo.Shell
                     return OnStartCommand(args);
                 case "upgrade":
                     return OnUpgradeCommand(args);
+                case "challenge":
+                    return OnChallengeCommand(args);
                 default:
                     return base.OnCommand(args);
+            }
+        }
+
+        private bool OnChallengeCommand(string[] args)
+        {
+            var startTime = DateTime.Now;
+
+            uint index = 2368000;
+            if (args.Length > 1)
+            {
+                index = uint.Parse(args[1]);
+            }
+
+            var endBlock = Blockchain.Default.GetBlock(index);
+            var dict = new Dictionary<UInt160, Fixed8>();
+
+            foreach (var r in endBlock.Transactions)
+            {
+                if (r.Outputs.Length <= 0) continue;
+
+                if (r.Type == TransactionType.IssueTransaction || r.Type == TransactionType.ContractTransaction)
+                {
+                    foreach (var output in r.Outputs)
+                    {
+                        if (dict.ContainsKey(output.ScriptHash)) continue;
+                        dict.Add(output.ScriptHash, output.Value);
+                        Log(
+                            $"{r.Hash}, {Neo.Wallets.Wallet.ToAddress(output.ScriptHash)}, {output.Value}");
+                    }
+                }
+            }
+
+            for (uint i = 0; i < index; i++)
+            {
+                var ticks = DateTime.Now.Ticks - startTime.Ticks;
+                Console.WriteLine($"{index}/{i}: after {new TimeSpan((long)(ticks / (i / (double)index) - ticks)).TotalMinutes:0.00} mins");
+
+                var block = Blockchain.Default.GetBlock(i);
+
+                foreach (var t in block.Transactions)
+                {
+                    if (t.Inputs.Length <= 0 || t.Outputs.Length <= 0) continue;
+
+                    if (t.Type == TransactionType.IssueTransaction || t.Type == TransactionType.ContractTransaction)
+                    {
+                        var from = t.Scripts[0].ScriptHash;
+                        if (dict.ContainsKey(from))
+                        {
+                            var sum = t.References.Values.Sum(v => v.Value);
+                            //dict[from] -= sum;
+                            Log($"{t.Hash}, {Neo.Wallets.Wallet.ToAddress(from)}, {-sum}");
+                        }
+
+                        foreach (var output in t.Outputs)
+                        {
+                            if (!dict.ContainsKey(output.ScriptHash)) continue;
+                            //dict[output.ScriptHash] += output.Value;
+                            Log(
+                                $"{t.Hash}, {Neo.Wallets.Wallet.ToAddress(output.ScriptHash)}, {output.Value}");
+                        }
+                    }
+                }
+            }
+
+            SaveFile(index);
+
+            return true;
+        }
+
+        private static string log;
+
+        private static void Log(string s)
+        {
+            log += s + "\n";
+            Console.WriteLine(s);
+        }
+
+        private void SaveFile(uint blockIndex)
+        {
+            var filePath = $"{blockIndex}.csv";
+            using (StreamWriter sw = new StreamWriter(filePath))
+            {
+                sw.Write(log);
             }
         }
 
