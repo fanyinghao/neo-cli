@@ -119,12 +119,18 @@ namespace Neo.Shell
 
                 if (r.Type == TransactionType.IssueTransaction || r.Type == TransactionType.ContractTransaction)
                 {
+                    var from = r.Scripts[0].ScriptHash;
+                    if (dict.ContainsKey(from))
+                    {
+                        var sum = r.References.Values.Sum(v => v.Value);
+                        dict[from] -= sum;
+                    }
+
                     foreach (var output in r.Outputs)
                     {
                         if (dict.ContainsKey(output.ScriptHash)) continue;
                         dict.Add(output.ScriptHash, output.Value);
-                        Log(
-                            $"{r.Hash}, {Neo.Wallets.Wallet.ToAddress(output.ScriptHash)}, {output.Value}");
+                        //Log($"{r.Hash}, {Neo.Wallets.Wallet.ToAddress(output.ScriptHash)}, {output.Value}");
                     }
                 }
             }
@@ -146,19 +152,23 @@ namespace Neo.Shell
                         if (dict.ContainsKey(from))
                         {
                             var sum = t.References.Values.Sum(v => v.Value);
-                            //dict[from] -= sum;
-                            Log($"{t.Hash}, {Neo.Wallets.Wallet.ToAddress(from)}, {-sum}");
+                            dict[from] -= sum;
+                            //Log($"{t.Hash}, {Neo.Wallets.Wallet.ToAddress(from)}, {-sum}");
                         }
 
                         foreach (var output in t.Outputs)
                         {
                             if (!dict.ContainsKey(output.ScriptHash)) continue;
-                            //dict[output.ScriptHash] += output.Value;
-                            Log(
-                                $"{t.Hash}, {Neo.Wallets.Wallet.ToAddress(output.ScriptHash)}, {output.Value}");
+                            dict[output.ScriptHash] += output.Value;
+                            //Log($"{t.Hash}, {Neo.Wallets.Wallet.ToAddress(output.ScriptHash)}, {output.Value}");
                         }
                     }
                 }
+            }
+
+            foreach (var item in dict)
+            {
+                Log($"{Neo.Wallets.Wallet.ToAddress(item.Key)}, {item.Value}");
             }
 
             SaveFile(index);
